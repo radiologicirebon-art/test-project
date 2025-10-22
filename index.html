@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring Suhu & Kelembaban Radiologi</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: #f0f7f8;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background-color: #3b999b;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    main {
+      padding: 1rem;
+      max-width: 1000px;
+      margin: auto;
+    }
+    select, input, button {
+      padding: 8px;
+      margin: 5px;
+      border-radius: 5px;
+      border: 1px solid #aaa;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #aaa;
+      text-align: center;
+      padding: 8px;
+    }
+    th {
+      background-color: #3b999b;
+      color: white;
+    }
+    .belum-input {
+      background-color: #ffb3b3 !important;
+    }
+    #belumInputInfo {
+      background: #ffecec;
+      border: 1px solid #ff6b6b;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+      color: #b00000;
+      display: none;
+    }
+    .popup {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .popup-content {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    canvas {
+      margin-top: 30px;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Monitoring Suhu dan Kelembaban<br>Instalasi Radiologi RS Mitra Plumbon</h1>
+  </header>
+
+  <main>
+    <h2>Input Suhu & Kelembaban</h2>
+    <form id="inputForm">
+      <select id="ruangan" required></select>
+      <input type="number" id="suhu" placeholder="Suhu (°C)" required step="0.1">
+      <input type="number" id="kelembaban" placeholder="Kelembaban (%)" required step="0.1">
+      <button type="submit">Simpan</button>
+    </form>
+
+    <h2>Status Input Hari Ini</h2>
+    <table id="statusTable">
+      <thead>
+        <tr>
+          <th>Ruangan</th>
+          <th>08:00</th>
+          <th>20:00</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="belumInputInfo"></div>
+
+    <button id="downloadPDF">Download Rekap Bulanan (PDF)</button>
+
+    <canvas id="chartCanvas" height="120"></canvas>
+  </main>
+
+  <!-- POPUP -->
+  <div id="popup" class="popup">
+    <div class="popup-content">
+      <h3>⏰ Waktunya Input Suhu dan Kelembaban Ruangan!</h3>
+      <p>Silakan isi data pada form di atas.</p>
+      <button onclick="closePopup()">Oke</button>
+    </div>
+  </div>
+
+  <!-- SCRIPT DITARUH DI BAWAH -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { jsPDF } from "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+
+    // --- Firebase ---
+    const firebaseConfig = {
+      databaseURL: "https://monitoring-suhu-radiologi-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // --- List Ruangan ---
+    const ruanganList = [
+      "Ruang Rontgen 1",
+      "Ruang Rontgen 2",
+      "Ruang ADM Radiologi",
+      "Ruang Panoramic",
+      "Ruang USG & Ruang Dokter",
+      "Ruang CT Scan",
+      "Ruang MRI",
+      "Ruang Panel MRI",
+      "Ruang Skrining MRI",
+      "Ruang Rontgen MCU"
+    ];
+
+    const selectRuangan = document.getElementById("ruangan");
+    ruanganList.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = r;
+      selectRuangan.appendChild(opt);
+    });
+
+    // --- Simpan ke Firebase ---
+    document.getElementById("inputForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const ruang = document.getElementById("ruangan").value;
+      const suhu = parseFloat(document.getElementById("suhu").value);
+      const kelembaban = parseFloat(document.getElementById("kelembaban").value);
+      const now = new Date();
+      const tanggal = now.toISOString().split("T")[0];
+      const jam = now.getHours() < 12 ? "08:00" : "20:00";
+
+      await set(ref(db, `monitoring/${tanggal}/${ruang}/${jam}`), {
+        suhu, kelembaban, waktu: now.toLocaleString("id-ID")
+      });
+
+      alert("✅ Data berhasil disimpan!");
+      document.getElementById("inputForm").reset();
+      loadStatus();
+      loadChart();
+    });
+
+    // --- Tabel Status ---
+    async function loadStatus() {
+      const tbody = document.querySelector("#statusTable tbody");
+      tbody.innerHTML = "";
+      const tanggal = new Date().toISOString().split("T")[0];
+      const snapshot = await get(child(ref(db), `monitoring/${tanggal}`));
+      const data = snapshot.exists() ? snapshot.val() : {};
+
+      let belumInput = [];
+
+      ruanganList.forEach(r => {
+        const row = document.createElement("tr");
+        const pagi = data[r]?.["08:00"] ? "✅" : "❌";
+        const malam = data[r]?.["20:00"] ? "✅" : "❌";
+
+        if (pagi === "❌" || malam === "❌") {
+          row.classList.add("belum-input");
+          belumInput.push(r);
+        }
+
+        row.innerHTML = `<td>${r}</td><td>${pagi}</td><td>${malam}</td>`;
+        tbody.appendChild(row);
+      });
+
+      const info = document.getElementById("belumInputInfo");
+      if (belumInput.length > 0) {
+        info.innerHTML = `<b>⚠️ Ruangan yang belum input hari ini:</b><br>${belumInput.join("<br>")}`;
+        info.style.display = "block";
+      } else {
+        info.style.display = "none";
+      }
+    }
+
+    // --- Chart ---
+    let chart;
+    async function loadChart() {
+      const ctx = document.getElementById("chartCanvas").getContext("2d");
+      const tanggal = new Date().toISOString().split("T")[0];
+      const snapshot = await get(child(ref(db), `monitoring/${tanggal}`));
+      const data = snapshot.exists() ? snapshot.val() : {};
+
+      const labels = [];
+      const suhuData = [];
+      const kelembabanData = [];
+
+      for (const [ruang, jamData] of Object.entries(data)) {
+        const pagi = jamData["08:00"]?.suhu || null;
+        const malam = jamData["20:00"]?.suhu || null;
+        if (pagi !== null) {
+          labels.push(`${ruang} (08:00)`);
+          suhuData.push(pagi);
+          kelembabanData.push(jamData["08:00"].kelembaban);
+        }
+        if (malam !== null) {
+          labels.push(`${ruang} (20:00)`);
+          suhuData.push(malam);
+          kelembabanData.push(jamData["20:00"].kelembaban);
+        }
+      }
+
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "Suhu (°C)", data: suhuData, backgroundColor: "#3b999b" },
+            { label: "Kelembaban (%)", data: kelembabanData, backgroundColor: "#d4a373" }
+          ]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    // --- PDF ---
+    document.getElementById("downloadPDF").addEventListener("click", () => {
+      const doc = new jsPDF();
+      doc.text("Rekap Bulanan - Monitoring Suhu & Kelembaban", 10, 10);
+      doc.text("Instalasi Radiologi RS Mitra Plumbon", 10, 20);
+      doc.save("rekap-bulanan.pdf");
+    });
+
+    // --- Popup Waktu ---
+    function checkPopupTime() {
+      const now = new Date();
+      const hours = now.getHours();
+      if ((hours === 8 || hours === 20) && now.getMinutes() < 10) {
+        document.getElementById("popup").style.display = "flex";
+      }
+    }
+    window.closePopup = function() {
+      document.getElementById("popup").style.display = "none";
+    };
+
+    // --- Load Awal ---
+    loadStatus();
+    loadChart();
+    setInterval(checkPopupTime, 60000);
+  </script>
+</body>
+</html>
