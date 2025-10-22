@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitoring Suhu & Kelembaban Radiologi</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -24,7 +25,9 @@
       max-width: 1000px;
       margin: auto;
     }
-    select, input, button {
+    select,
+    input,
+    button {
       padding: 8px;
       margin: 5px;
       border-radius: 5px;
@@ -35,7 +38,9 @@
       width: 100%;
       margin-top: 20px;
     }
-    table, th, td {
+    table,
+    th,
+    td {
       border: 1px solid #aaa;
       text-align: center;
       padding: 8px;
@@ -58,8 +63,11 @@
     }
     .popup {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5);
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
       display: none;
       align-items: center;
       justify-content: center;
@@ -70,7 +78,7 @@
       padding: 20px;
       border-radius: 10px;
       text-align: center;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
     }
     canvas {
       margin-top: 30px;
@@ -82,15 +90,17 @@
 </head>
 <body>
   <header>
-    <h1>Monitoring Suhu dan Kelembaban<br>Instalasi Radiologi RS Mitra Plumbon</h1>
+    <h1>
+      Monitoring Suhu dan Kelembaban<br />Instalasi Radiologi RS Mitra Plumbon
+    </h1>
   </header>
 
   <main>
     <h2>Input Suhu & Kelembaban</h2>
     <form id="inputForm">
       <select id="ruangan" required></select>
-      <input type="number" id="suhu" placeholder="Suhu (°C)" required step="0.1">
-      <input type="number" id="kelembaban" placeholder="Kelembaban (%)" required step="0.1">
+      <input type="number" id="suhu" placeholder="Suhu (°C)" required step="0.1" />
+      <input type="number" id="kelembaban" placeholder="Kelembaban (%)" required step="0.1" />
       <button type="submit">Simpan</button>
     </form>
 
@@ -122,15 +132,18 @@
     </div>
   </div>
 
-  <!-- SCRIPT DITARUH DI BAWAH -->
+  <!-- SCRIPT -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-    import { jsPDF } from "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+
+    // ambil jsPDF dari window.jspdf
+    const { jsPDF } = window.jspdf;
 
     // --- Firebase ---
     const firebaseConfig = {
-      databaseURL: "https://monitoring-suhu-radiologi-default-rtdb.asia-southeast1.firebasedatabase.app/"
+      databaseURL:
+        "https://monitoring-suhu-radiologi-default-rtdb.asia-southeast1.firebasedatabase.app/",
     };
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
@@ -146,11 +159,17 @@
       "Ruang MRI",
       "Ruang Panel MRI",
       "Ruang Skrining MRI",
-      "Ruang Rontgen MCU"
+      "Ruang Rontgen MCU",
     ];
 
     const selectRuangan = document.getElementById("ruangan");
-    ruanganList.forEach(r => {
+    const defaultOpt = document.createElement("option");
+    defaultOpt.textContent = "-- Pilih Ruangan --";
+    defaultOpt.disabled = true;
+    defaultOpt.selected = true;
+    selectRuangan.appendChild(defaultOpt);
+
+    ruanganList.forEach((r) => {
       const opt = document.createElement("option");
       opt.value = r;
       opt.textContent = r;
@@ -168,7 +187,9 @@
       const jam = now.getHours() < 12 ? "08:00" : "20:00";
 
       await set(ref(db, `monitoring/${tanggal}/${ruang}/${jam}`), {
-        suhu, kelembaban, waktu: now.toLocaleString("id-ID")
+        suhu,
+        kelembaban,
+        waktu: now.toLocaleString("id-ID"),
       });
 
       alert("✅ Data berhasil disimpan!");
@@ -187,7 +208,7 @@
 
       let belumInput = [];
 
-      ruanganList.forEach(r => {
+      ruanganList.forEach((r) => {
         const row = document.createElement("tr");
         const pagi = data[r]?.["08:00"] ? "✅" : "❌";
         const malam = data[r]?.["20:00"] ? "✅" : "❌";
@@ -223,8 +244,8 @@
       const kelembabanData = [];
 
       for (const [ruang, jamData] of Object.entries(data)) {
-        const pagi = jamData["08:00"]?.suhu || null;
-        const malam = jamData["20:00"]?.suhu || null;
+        const pagi = jamData["08:00"]?.suhu ?? null;
+        const malam = jamData["20:00"]?.suhu ?? null;
         if (pagi !== null) {
           labels.push(`${ruang} (08:00)`);
           suhuData.push(pagi);
@@ -244,10 +265,10 @@
           labels,
           datasets: [
             { label: "Suhu (°C)", data: suhuData, backgroundColor: "#3b999b" },
-            { label: "Kelembaban (%)", data: kelembabanData, backgroundColor: "#d4a373" }
-          ]
+            { label: "Kelembaban (%)", data: kelembabanData, backgroundColor: "#d4a373" },
+          ],
         },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        options: { responsive: true, scales: { y: { beginAtZero: true } } },
       });
     }
 
@@ -267,7 +288,7 @@
         document.getElementById("popup").style.display = "flex";
       }
     }
-    window.closePopup = function() {
+    window.closePopup = function () {
       document.getElementById("popup").style.display = "none";
     };
 
